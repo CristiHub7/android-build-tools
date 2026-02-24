@@ -9,8 +9,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - cc: gcc
-            cxx: g++
+          - target: arm64
             triplet: aarch64-linux-gnu
 
     steps:
@@ -19,12 +18,20 @@ jobs:
       with:
         submodules: true
 
+    # Fix: GitHub runner apt sources can 404 for arm64 on security.ubuntu.com
+    - name: Fix apt sources for multiarch
+      run: |
+        sudo sed -i 's|http://security.ubuntu.com/ubuntu|http://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list || true
+        sudo sed -i 's|https://security.ubuntu.com/ubuntu|http://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list || true
+        sudo find /etc/apt/sources.list.d -type f -maxdepth 1 -print -exec sudo sed -i \
+          's|http://security.ubuntu.com/ubuntu|http://archive.ubuntu.com/ubuntu|g; s|https://security.ubuntu.com/ubuntu|http://archive.ubuntu.com/ubuntu|g' {} \; || true
+
     - name: Install cross toolchain + arm64 deps
       run: |
         sudo dpkg --add-architecture arm64
         sudo apt-get update
 
-        # Native build tools (x86_64)
+        # Native build tools (amd64)
         sudo apt-get install -y --no-install-recommends \
           git cmake ninja-build pkg-config bison flex
 
@@ -33,7 +40,7 @@ jobs:
           gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
           libc6-dev-arm64-cross
 
-        # arm64 target libraries/headers
+        # Target (arm64) headers/libs
         sudo apt-get install -y --no-install-recommends \
           libexpat1-dev:arm64 \
           libfmt-dev:arm64 \
@@ -59,14 +66,12 @@ jobs:
         set(CMAKE_C_COMPILER   aarch64-linux-gnu-gcc)
         set(CMAKE_CXX_COMPILER aarch64-linux-gnu-g++)
 
-        # Sysroot provided by libc6-dev-arm64-cross
         set(CMAKE_SYSROOT /usr/aarch64-linux-gnu)
 
-        # Help CMake find target headers/libs first
         set(CMAKE_FIND_ROOT_PATH
-            /usr/aarch64-linux-gnu
-            /usr/lib/aarch64-linux-gnu
-            /usr/include/aarch64-linux-gnu
+          /usr/aarch64-linux-gnu
+          /usr/lib/aarch64-linux-gnu
+          /usr/include/aarch64-linux-gnu
         )
 
         set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
@@ -98,6 +103,7 @@ jobs:
           build/vendor/aapt2
         if-no-files-found: error
 
+
   mingw:
     runs-on: windows-latest
     strategy:
@@ -109,12 +115,14 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v4
+
     - name: Install dependencies
       uses: msys2/setup-msys2@v2
       with:
         msystem: ${{ matrix.msystem }}
         install: base-devel git
         pacboy: cc cmake expat fmt gtest libpng ninja pkgconf protobuf
+
     - name: Prepare
       run: |
         git submodule update --init --depth 1
@@ -123,14 +131,17 @@ jobs:
         cd vendor/core
         git config core.symlinks true
         MSYS='winsymlinks:nativestrict' git restore --source=HEAD :/ || true
+
     - name: Build
       run: |
         cmake -B build -G Ninja
         cmake --build build
+
     - name: Check
       run: |
         ./build/vendor/aapt version
         ./build/vendor/aapt2 version
+
     - name: Upload artifact v4
       uses: actions/upload-artifact@v4
       with:
