@@ -1,4 +1,4 @@
-name: buildd
+name: build
 
 on: [push, pull_request]
 
@@ -16,8 +16,10 @@ jobs:
           - os: "archlinux:base"
             pkgs: "clang"
             env: "CC=clang CXX=clang++"
+
     container:
       image: ${{ matrix.os }}
+
     steps:
     - name: prep archlinux
       if: startsWith(matrix.os, 'archlinux')
@@ -25,41 +27,59 @@ jobs:
         pacman -Syu --needed --noconfirm \
           ${{ matrix.pkgs }} bison cmake expat flex fmt git gtest \
           libpng ninja pkgconf protobuf
+
     - name: Checkout
       uses: actions/checkout@v4
       with:
         submodules: true
+
     - name: Prepare
       run: |
         git config --global user.email "you@example.com"
         git config --global user.name "Your Name"
+
     - name: Build
       run: |
         test -n "${{ matrix.env }}" && export ${{ matrix.env }}
         cmake -B build -G Ninja
         cmake --build build
+
     - name: Check
       run: |
         ./build/vendor/aapt version
         ./build/vendor/aapt2 version
+
+    - name: Upload artifact v4
+      uses: actions/upload-artifact@v4
+      with:
+        name: aapt-linux-${{ matrix.pkgs }}
+        path: |
+          build/vendor/aapt
+          build/vendor/aapt2
+        if-no-files-found: error
+
 
   mingw:
     runs-on: windows-latest
     strategy:
       matrix:
         msystem: [clang64, ucrt64]
+
     defaults:
       run:
         shell: msys2 {0}
+
     steps:
     - name: Checkout
       uses: actions/checkout@v4
+
     - name: Install dependencies
       uses: msys2/setup-msys2@v2
       with:
         msystem: ${{ matrix.msystem }}
         install: base-devel git
         pacboy: cc cmake expat fmt gtest libpng ninja pkgconf protobuf
+
     - name: Prepare
       run: |
         git submodule update --init --depth 1
@@ -68,11 +88,22 @@ jobs:
         cd vendor/core
         git config core.symlinks true
         MSYS='winsymlinks:nativestrict' git restore --source=HEAD :/ || true
+
     - name: Build
       run: |
         cmake -B build -G Ninja
         cmake --build build
+
     - name: Check
       run: |
         ./build/vendor/aapt version
         ./build/vendor/aapt2 version
+
+    - name: Upload artifact v4
+      uses: actions/upload-artifact@v4
+      with:
+        name: aapt-windows-${{ matrix.msystem }}
+        path: |
+          build/vendor/aapt.exe
+          build/vendor/aapt2.exe
+        if-no-files-found: error
